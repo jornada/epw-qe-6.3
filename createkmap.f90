@@ -474,7 +474,9 @@
     CALL flush(stdout)
     !
     OPEN(UNIT=iukmap, file = trim(prefix)//'.kmap', form='formatted')
-    OPEN(UNIT=iukgmap,file = trim(prefix)//'.kgmap',form='formatted')
+    !FHJ: we now open *.kgmap as an unformatted file for performance
+    !OPEN(UNIT=iukgmap,file = trim(prefix)//'.kgmap',form='formatted')
+    OPEN(UNIT=iukgmap,file = trim(prefix)//'.kgmap',form='unformatted')
     ! 
     IF ( .NOT. ALLOCATED(shift)) ALLOCATE ( shift(nkstot) )
 
@@ -584,12 +586,16 @@
     
        
     
+    !FHJ: we now open *.kgmap as an unformatted file for performance
     DO ik=1,nkstot
-       WRITE(iukgmap, '(3i6)') ik, shift(ik)
+       !WRITE(iukgmap, '(3i6)') ik, shift(ik)
+       WRITE(iukgmap) ik, shift(ik)
     END DO
-    WRITE(iukgmap, '(i5)') ng0vec
+    !WRITE(iukgmap, '(i5)') ng0vec
+    WRITE(iukgmap) ng0vec
     DO ig0=1,ng0vec
-       WRITE(iukgmap,'(3f20.15)') g0vec_all_r (:,ig0)
+       !WRITE(iukgmap,'(3f20.15)') g0vec_all_r (:,ig0)
+       WRITE(iukgmap) g0vec_all_r (:,ig0)
     END DO
     
     IF (allocated(shift) ) DEALLOCATE(shift)

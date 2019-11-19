@@ -65,6 +65,25 @@
   !! Index for the inverse symmetry
   REAL(kind=DP) :: rdotk
   !! $$\mathbf{r}\cdot\mathbf{k}
+  INTEGER :: ni, nj, nk
+  INTEGER, ALLOCATABLE :: gvector2index(:, :, :)
+  !! Mapping array of a G vector to its index in the unsorted list
+
+  ! FHJ: Allocate mapping arrays to quickly search for G vectors.
+  !
+  ! Max miller indices (same convention as in module stick_set)
+  ni = (dfftp%nr1-1)/2
+  nj = (dfftp%nr2-1)/2
+  nk = (dfftp%nr3-1)/2
+  ALLOCATE( gvector2index(-ni:ni,-nj:nj,-nk:nk) )
+  gvector2index(:,:,:) = 0
+  DO jg = 1, ngm
+    i = mill(1,jg)
+    j = mill(2,jg)
+    k = mill(3,jg)
+    gvector2index(i,j,k) = jg
+  ENDDO
+
   !
   !  loop on the symmetries of the crystal
   !
@@ -85,18 +104,11 @@
       k = s (3, 1, isym) * mill(1,ig) + s (3, 2, isym) * mill(2,ig) + s (3, 3, isym) * mill(3,ig)
       !
       jg = 0
-      tfound = .false.
-      DO while ((.not.tfound).and.(jg.lt.ngm))
-        jg = jg + 1
-        tfound = (i.eq.mill(1,jg)) .and. (j.eq.mill(2,jg)) .and.(k.eq.mill(3,jg))
-      ENDDO
-      !
-      IF (tfound) THEN
-        gmapsym ( ig, isym ) = jg
-      ELSE
-        gmapsym ( ig, isym ) = 0
-        notfound = notfound + 1
-      ENDIF
+      ! FHJ: don`t change this for a cycle/goto, it can break vectorization!
+      if (abs(i)<=ni .and. abs(j)<=nj .and. abs(k)<=nk) then
+        jg = gvector2index(i,j,k)
+      endif
+      gmapsym(ig,isym) = jg
       !
       ! now the phase factors e^{iGv}
       !
@@ -119,7 +131,7 @@
       !
     ENDDO
     !
-    IF (notfound.gt.0) &
+    IF (any(gmapsym(1:ngm,1:nsym)==0)) &
       CALL errore ('gmap_sym','incomplete mapping of G vectors: notfound = ',notfound)
     !
   ENDDO

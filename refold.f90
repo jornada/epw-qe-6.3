@@ -28,112 +28,117 @@
   !   the large sphere (density set).
   !
   !-----------------------------------------------------------------
+  USE fft_base,      ONLY : dfftp
   USE io_global,     ONLY : stdout, meta_ionode
   USE io_epw,        ONLY : iukgmap
 ! SP: Sucidal. Produce too much data. Only use for debugging. 
 !  USE control_flags, ONLY : iverbosity
   USE kfold
   !
-  implicit none
-  INTEGER :: ngm_g, mill_g( 3, ngm_g ), ig0, ig1, ig2, ig2_guess, i, j, k, &
-             notfound, indold, indnew, guess_skip,itoj(ngm_g),jtoi(ngm_g),ig1_use,ig2_use
-  LOGICAL :: tfound
+  IMPLICIT NONE
   !
-!  IF (iverbosity.eq.1) then 
-!    WRITE(stdout,*) '  There are ',ng0vec,'inequivalent folding G_0 vectors'
-!    DO ig0 = 1, ng0vec
-!      WRITE(stdout,'(a,i1,a,3i3)') 'g0vec_all( ',ig0,') = ',g0vec_all(:,ig0)
-!    ENDDO
-!  ENDIF
+  INTEGER :: ngm_g
+  !! Counter on G-vectors
+  INTEGER :: mill_g(3,ngm_g)
+  !!  Array of Miller indices of G-vectors in increasing order of G^2
+  INTEGER :: jtoi(ngm_g)
+  !! For the i-th G-vector in the sorted list, jtoi(i)
+  !! returns its index in the unsorted list
+  INTEGER :: itoj(ngm_g)
+  !! itoj(i) returns the index of the G-vector in the sorted list
+  !! that was at i-th position in the unsorted list
+  INTEGER :: ig0 
+  !! Counter on G_0 vectors
+  INTEGER :: ig1
+  !! Counter on G vectors
+  INTEGER :: i, j, k
+  !! Miller indices for G+G_0 vector
+  INTEGER :: ig1_use, ig2_use
+  !! Temporary G-vectors indices
+  INTEGER :: indold, indnew
+  !! Counter on G_0 vectors indices for writing to file
   !
-  allocate ( gmap ( ngm_g, ng0vec ) )
-  guess_skip=0
+  INTEGER :: ni, nj, nk
+  INTEGER, ALLOCATABLE :: gvector2index(:, :, :)
+  !! Mapping array of a G vector to its index in the unsorted list
+  
+  ALLOCATE( gmap(ngm_g,ng0vec) )
+  gmap(:,:) = 0
+
+  ! FHJ: Allocate mapping arrays to quickly search for G vectors.
   !
-  !  Loop on the inequivalent G-vectors
+  ! Max miller indices (same convention as in module stick_set)
+  ni = (dfftp%nr1-1)/2
+  nj = (dfftp%nr2-1)/2
+  nk = (dfftp%nr3-1)/2
+  ALLOCATE( gvector2index(-ni:ni,-nj:nj,-nk:nk) )
+  !
+  ! FHJ: we don`t need to use itoj in the mapping arrays since mill_g already
+  ! refers to the sorted G vectors.
+  gvector2index(:,:,:) = 0
+  DO ig2_use = 1, ngm_g
+    i = mill_g(1,ig2_use)
+    j = mill_g(2,ig2_use)
+    k = mill_g(3,ig2_use)
+    gvector2index(i,j,k) = ig2_use
+  ENDDO
+
+  !
+  !  Loop on the inequivalent G_0 vectors
   !
   DO ig0 = 1, ng0vec
-     !
-     IF (ig0.eq.1) then
-        WRITE(stdout,'(/5x,"Progress kgmap: ")',advance='no')
-        indold = 0
-     ENDIF
-     indnew = nint(dble(ig0)/dble(ng0vec)*40)
-     IF (indnew.ne.indold) write(6,'(a)',advance='no') '#'
-     indold = indnew
-     !
-     !
-!    IF (iverbosity.eq.1) &
-!      WRITE(stdout,'(i3,4x,3i3)') ig0, g0vec_all(:, ig0 )
-    notfound = 0
+    !
+    IF (ig0 .eq. 1) THEN
+      WRITE(stdout,'(/5x,"Progress kgmap: ")',advance='no')
+      indold = 0
+    ENDIF
+    indnew = nint( dble(ig0) / dble(ng0vec) * 40 )
+    IF (indnew.ne.indold) WRITE(stdout,'(a)',advance='no') '#'
+    indold = indnew
+    !
     DO ig1 = 1, ngm_g
-      ig1_use=itoj(ig1)
       !
-      !  the initial G-vector
+      ig1_use = itoj(ig1)
       !
-      i = mill_g(1, ig1_use)
-      j = mill_g(2, ig1_use)
-      k = mill_g(3, ig1_use)
-!      IF (iverbosity.eq.1) &
-!        WRITE(stdout,'(5x,i5,4x,3i5)') ig1_use, i,j,k 
+      !  the initial G vector
       !
-      !  the final G-vector
+      i = mill_g(1,ig1_use)
+      j = mill_g(2,ig1_use)
+      k = mill_g(3,ig1_use)
       !
-      i = i + g0vec_all(1, ig0 )
-      j = j + g0vec_all(2, ig0 )
-      k = k + g0vec_all(3, ig0 )
-!      IF (iverbosity.eq.1) &
-!        WRITE(stdout,'(5x,i5,4x,3i5)') ig1_use, i,j,k 
+      !  the final G+G_0 vector
       !
-      ig2 = 0
-      tfound = .false.
+      i = i + g0vec_all(1,ig0)
+      j = j + g0vec_all(2,ig0)
+      k = k + g0vec_all(3,ig0)
       !
-      ! try to guess next index
-      !
-      ig2_guess = jtoi(ig1_use) + guess_skip
-      if (ig2_guess.gt.0 .and. ig2_guess.lt.ngm_g+1) then
-         ig2_guess = itoj(ig2_guess)
-         if ((i.eq.mill_g(1, ig2_guess)).and. (j.eq.mill_g(2,ig2_guess)) .and. (k.eq.mill_g(3, ig2_guess))) then
-            ig2_use = ig2_guess
-            tfound = .true.
-         endif
+      ig2_use = 0
+      ! FHJ: don`t change this for a cycle/goto, it can break vectorization!
+      if (abs(i)<=ni .and. abs(j)<=nj .and. abs(k)<=nk) then
+        ig2_use = gvector2index(i,j,k)
       endif
-      !
-      DO while ((.not.tfound).and.(ig2.lt.ngm_g))
-        !
-        ig2 = ig2 + 1
-        ig2_use = itoj(ig2)
-        tfound = (i.eq.mill_g(1, ig2_use)).and. & 
-                 (j.eq.mill_g(2, ig2_use)).and. & 
-                 (k.eq.mill_g(3, ig2_use))
- !       IF (iverbosity.eq.1) &
- !         WRITE(stdout,'(10x,i5,4x,3i5,2x,L)') ig2_use, mill_g(:, ig2_use), tfound
-        !
-      ENDDO
-      IF (tfound) then
-        gmap ( ig1_use, ig0 ) = ig2_use
-        guess_skip=jtoi(ig2_use)-jtoi(ig1_use)
-      ELSE
-        gmap ( ig1_use, ig0 ) = 0
-        notfound = notfound + 1
-      ENDIF
+      gmap(ig1_use,ig0) = ig2_use
       !
     ENDDO
     !
-!    IF (iverbosity.eq.1) &
-!      WRITE(stdout,*) 'ig0 = ',ig0,' not found = ', notfound, ' out of ',ngm_g
-    ! 
   ENDDO
+  !
+  ! FHJ: deallocate G-vector mapping arrays
+  DEALLOCATE( gvector2index )
   ! 
   !  output on file for electron-phonon matrix elements
   !
-  IF (.NOT. meta_ionode) iukgmap = stdout
-  !
-  DO ig1 = 1, ngm_g
-    WRITE (iukgmap, '(9i10)') (gmap ( ig1, ig0), ig0 = 1, ng0vec)
-  ENDDO
-  !
-  IF (iukgmap.ne.stdout) close (iukgmap)
+  IF (meta_ionode) then
+    !FHJ: we now open *.kgmap as an unformatted file for performance
+    DO ig1 = 1, ngm_g
+      !WRITE(iukgmap,'(9i10)') (gmap(ig1,ig0), ig0 = 1, ng0vec)
+      WRITE(iukgmap) gmap(ig1,1:ng0vec)
+    ENDDO
+    CLOSE(iukgmap)
+  ENDIF
   WRITE(stdout,*)
+  !
+  RETURN
   !
   end subroutine refold
 

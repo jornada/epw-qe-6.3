@@ -79,32 +79,55 @@
   LOGICAL :: lwinq_big( nbnd, nkstot )
   !! .true. if the band ibnd lies within the outer window at k+qpoint ikq
   !
+  LOGICAL, PARAMETER :: skip_load_umat = .FALSE.
+  !! FHJ: Set to .TRUE. to skip loading the U matrix and use the identity instead
+
   cu_big = czero
   cuq_big = czero
   IF (meta_ionode) THEN
     !
     ! first proc read rotation matrix (coarse mesh) from file
     !
-    OPEN ( unit = iunukk, file = filukk, status = 'old', form = 'formatted',iostat=ios)
-    IF (ios /=0) call errore ('loadumat', 'error opening ukk file',iunukk)
+    IF (.NOT.skip_load_umat) THEN
+      OPEN ( unit = iunukk, file = filukk, status = 'old', form = 'formatted',iostat=ios)
+      IF (ios /=0) call errore ('loadumat', 'error opening ukk file',iunukk)
+    ENDIF
     !
     DO ik = 1, nkstot
       DO ibnd = 1, nbnd
         DO jbnd = 1, nbndsub
-           READ(iunukk, *) cu_big (ibnd, jbnd, ik)
+          IF (.NOT.skip_load_umat) THEN
+            READ(iunukk, *) cu_big (ibnd, jbnd, ik)
+          ELSE
+            if (ibnd==jbnd) then
+              cu_big (ibnd, jbnd, ik) = (1d0,0d0)
+            else
+              cu_big (ibnd, jbnd, ik) = (0d0,0d0)
+            endif
+          ENDIF
         ENDDO
       ENDDO
     ENDDO
     DO ik = 1, nkstot
-       DO ibnd = 1, nbnd
+      DO ibnd = 1, nbnd
+        IF (.NOT.skip_load_umat) THEN
           READ (iunukk,*) lwin_big(ibnd,ik)
-       ENDDO
+        ELSE
+          lwin_big(ibnd,ik) = .true.
+        ENDIF
+      ENDDO
     ENDDO
     DO ibnd = 1, nbnd
-       READ (iunukk,*) exband(ibnd)
+      IF (.NOT.skip_load_umat) THEN
+        READ (iunukk,*) exband(ibnd)
+      ELSE
+        exband(ibnd) = .false.
+      ENDIF
     ENDDO
     !
-    CLOSE ( iunukk )
+    IF (.NOT.skip_load_umat) THEN
+      CLOSE ( iunukk )
+    ENDIF
     !
     !  generate U(k+q) through the map 
     !

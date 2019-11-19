@@ -79,13 +79,17 @@
   !
   IF (meta_ionode) then
     !
-    open ( unit = iukgmap, file = trim(prefix)//'.kgmap', form = 'formatted',status='old',iostat=ios)
+    !FHJ: we now open *.kgmap as an unformatted file for performance
+    !open ( unit = iukgmap, file = trim(prefix)//'.kgmap', form = 'formatted',status='old',iostat=ios)
+    open ( unit = iukgmap, file = trim(prefix)//'.kgmap', form = 'unformatted',status='old',iostat=ios)
     IF (ios /=0) call errore ('readgmap', 'error opening kgmap file',iukgmap)
     !
     DO ik = 1, nkstot
-      read (iukgmap,*) ik1, shift (ik1)
+      !read (iukgmap,*) ik1, shift (ik1)
+      read (iukgmap) ik1, shift (ik1)
     ENDDO
-    read (iukgmap,*) ng0vec
+    !read (iukgmap,*) ng0vec
+    read (iukgmap) ng0vec
     !
     !  the following seems crazy but I make it for compatibility
     !  with versions up to 2.1.5:
@@ -115,15 +119,18 @@
   allocate ( gmap (ngxx * ng0vec) )
   !
   IF (meta_ionode) then
+    !FHJ: we now open *.kgmap as an unformatted file for performance
      !
     DO ig0 = 1, ng0vec
-      read (iukgmap,*) g0vec_all_r (:,ig0)
+      !read (iukgmap,*) g0vec_all_r (:,ig0)
+      read (iukgmap) g0vec_all_r (:,ig0)
     ENDDO
     DO ig = 1, ngxx
       ! 
       ! at variance with the nscf calculation, here gmap is read as a vector,
       ! 
-      read (iukgmap,*) (gmap ( ng0vec * ( ig - 1 ) + ishift ), ishift = 1, ng0vec)
+      !read (iukgmap,*) (gmap ( ng0vec * ( ig - 1 ) + ishift ), ishift = 1, ng0vec)
+      read (iukgmap) gmap ( ng0vec*(ig - 1) + 1 : ng0vec*(ig - 1) + ng0vec )
     ENDDO
     !
     close (iukgmap)
